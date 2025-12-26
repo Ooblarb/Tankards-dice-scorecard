@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tankard's Dice Score Card</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 450px;
+      margin: 30px auto;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 10px;
+      letter-spacing: 1px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(8, 95px);
+      gap: 6px;
+      margin-top: 20px;
+    }
+
+    input {
+      padding: 6px;
+      font-size: 14px;
+    }
+
+    input.header,
+    input.locked,
+    input.subtotal,
+    input.running,
+    input.codeLocked,
+    input.calculated {
+      background-color: #eee;
+      font-weight: bold;
+      text-align: center;
+      cursor: default;
+    }
+
+    input.number {
+      text-align: right;
+    }
+
+    .total {
+      margin-top: 20px;
+      font-size: 20px;
+      font-weight: bold;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+
+<h1>TANKARD'S DICE SCORE CARD</h1>
+
+<div class="grid" id="grid"></div>
+
+<div class="total">
+  Total: <span id="total">0</span>
+</div>
+
+<script>
+const rows = 11;
+const cols = 8;
+const grid = document.getElementById('grid');
+const totalSpan = document.getElementById('total');
+
+const headerLabels = [
+  "USED", "DICE", "Round 1", "Round 2",
+  "Round 3", "Round 4", "Round 5", "Round 6"
+];
+
+const columnALabels = [
+  "Row 1", "Row 2", "Row 3", "Row 4", "Row 5",
+  "Row 6", "BONUS", "ROUND", "Subtotal", "Running Total"
+];
+
+const columnBLabels = [
+  "d4", "d6", "d8", "d10", "d12",
+  "d20", "TOTAL", "TOTAL", "", ""
+];
+
+const row10TextFields = {
+  A: "GRAND",
+  B: "TOTAL"
+};
+
+const row11TextFields = {
+  A: "ADV.",
+  B: "ROLL",
+  D: "FINAL",
+  E: "TOTAL",
+  G: "TANKARD's",
+  H: "DICE"
+};
+
+const savedValues = JSON.parse(sessionStorage.getItem('gridValues') || '[]');
+let valueIndex = 0;
+
+const cellMap = [];
+
+// Build grid
+for (let r = 0; r < rows; r++) {
+  cellMap[r] = [];
+  for (let c = 0; c < cols; c++) {
+    const input = document.createElement('input');
+
+    // Header row
+    if (r === 0) {
+      input.type = 'text';
+      input.value = headerLabels[c];
+      input.readOnly = true;
+      input.className = 'header';
+    }
+    // Column A
+    else if (c === 0) {
+      if (r >= 1 && r <= 6) { // Rows 2–7 → user-editable text
+        input.type = 'text';
+        input.className = 'cell';
+        input.value = savedValues[valueIndex] || '';
+        valueIndex++;
+      } else if (r === 10) { // Row 11 Column A
+        input.type = 'text';
+        input.value = row11TextFields.A;
+        input.readOnly = true;
+        input.className = 'codeLocked';
+      } else if (r === 9) { // Row 10 Column A → read-only text
+        input.type = 'text';
+        input.value = row10TextFields.A;
+        input.readOnly = true;
+        input.className = 'codeLocked';
+      } else { // Other rows → locked
+        input.type = 'text';
+        input.value = columnALabels[r - 1];
+        input.readOnly = true;
+        input.className = 'locked';
+      }
+    }
+    // Column B
+    else if (c === 1) {
+      if (r === 10) { // Row 11
+        input.type = 'text';
+        input.value = row11TextFields.B;
+        input.readOnly = true;
+        input.className = 'codeLocked';
+      } else if (r === 9) { // Row 10 Column B → read-only text
+        input.type = 'text';
+        input.value = row10TextFields.B;
+        input.readOnly = true;
+        input.className = 'codeLocked';
+      } else { // Other rows
+        input.type = 'text';
+        input.value = columnBLabels[r - 1];
+        input.readOnly = true;
+        input.className = 'locked';
+      }
+    }
+    // Subtotal row (Row 9 → r === 8)
+    else if (r === 8) {
+      input.type = 'number';
+      input.readOnly = true;
+      input.className = 'subtotal number';
+    }
+    // Running total row (Row 10 → r === 9)
+    else if (r === 9) {
+      input.type = 'number';
+      input.readOnly = true;
+      input.className = 'running number';
+    }
+    // Row 11
+    else if (r === 10) {
+      if ([3,4,6,7].includes(c)) { // Columns D,E,G,H → read-only text
+        const key = ["D","E","G","H"][ [3,4,6,7].indexOf(c) ];
+        input.type = 'text';
+        input.value = row11TextFields[key];
+        input.readOnly = true;
+        input.className = 'codeLocked';
+      } else if (c === 2) { // Column C → user input number
+        input.type = 'number';
+        input.className = 'cell number';
+        input.value = savedValues[valueIndex] || '';
+        valueIndex++;
+      } else if (c === 5) { // Column F → calculated
+        input.type = 'number';
+        input.readOnly = true;
+        input.className = 'calculated number';
+      }
+    }
+    // Editable numeric cells (Rows 2–8, Columns C–H)
+    else {
+      input.type = 'number';
+      input.className = 'cell number';
+      input.value = savedValues[valueIndex] || '';
+      valueIndex++;
+    }
+
+    cellMap[r][c] = input;
+    grid.appendChild(input);
+  }
+}
+
+function calculateTotals() {
+  let grandTotal = 0;
+  const values = [];
+
+  // Calculate column subtotals (Row 9)
+  for (let c = 2; c < cols; c++) {
+    let colSum = 0;
+    for (let r = 1; r <= 7; r++) { // Rows 2–8
+      const val = Number(cellMap[r][c].value) || 0;
+      colSum += val;
+      grandTotal += val;
+    }
+    cellMap[8][c].value = colSum; // Row 9 subtotal
+  }
+
+  // Calculate running total row (Row 10)
+  for (let c = 2; c < cols; c++) {
+    if (c === 2) cellMap[9][c].value = cellMap[8][c].value;
+    else cellMap[9][c].value = Number(cellMap[9][c-1].value) + Number(cellMap[8][c].value);
+  }
+
+  // Calculate Row 11 Column F = H10 + C11
+  const H10 = Number(cellMap[9][7].value) || 0;
+  const C11 = Number(cellMap[10][2].value) || 0;
+  cellMap[10][5].value = H10 + C11;
+
+  // Save editable values only
+  for (let r = 1; r <= 10; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (!(r === 10 && c === 5) && cellMap[r][c].className.includes('cell')) {
+        values.push(cellMap[r][c].value);
+      }
+    }
+  }
+
+  totalSpan.textContent = grandTotal;
+  sessionStorage.setItem('gridValues', JSON.stringify(values));
+}
+
+document.querySelectorAll('.cell').forEach(cell => {
+  cell.addEventListener('input', calculateTotals);
+});
+
+calculateTotals();
+</script>
+
+</body>
+</html>
